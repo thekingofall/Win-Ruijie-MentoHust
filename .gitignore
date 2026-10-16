@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.venv/
+.build-venv/
+
+# 3rd tools
+/tools
+
+# Build outputs
+build/
+dist/
+*.spec
+
+# Editor / IDE
+.vs/f
+.vscode/
+.idea/
+*.suo
+*.user
+*.VC.db
+
+# Native build outputs
+*.obj
+*.pdb
+*.ilk
+*.idb
+*.ipch
+*.aps
+*.ncb
+*.sdf
+*.opensdf
+
+# Local runtime data
+*.log
+Ruijie Supplicant/logs/
+
+# Agents Notes
+AGENTS.md
+
+# Private reverse engineering and runtime profiles
+.local/
+profiles/
+*.writing
+reports/private/
+
+# Local investigation and installation receipts
+reports/*
+!reports/gui-preview.png
+!reports/release-validation.md
+Ruijie Supplicant/

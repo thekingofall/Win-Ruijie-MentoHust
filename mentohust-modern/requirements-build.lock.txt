@@ -1,0 +1,15 @@
+# Windows Python 3.12 build environment
+altgraph==0.17.5
+capstone==5.0.9
+packaging==26.3
+pefile==2024.8.26
+pillow==12.3.0
+pip==24.2
+pyinstaller-hooks-contrib==2026.8
+pyinstaller==6.22.3
+pystray==0.19.5
+pywin32-ctypes==0.2.3
+scapy==2.8.0
+setuptools==84.0.0
+six==1.17.0
+ttkbootstrap==2.2.3

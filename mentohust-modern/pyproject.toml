@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mentohust-win-modern"
+version = "0.5.1"
+description = "A modern Windows GUI for MentoHUST-style Ruijie wired authentication."
+requires-python = ">=3.12"
+dependencies = [
+    "pefile>=2024.8.26",
+    "Pillow>=10.4.0",
+    "pystray>=0.19.5",
+    "scapy>=2.7.0",
+]
+
+[project.gui-scripts]
+xin-ruijie = "mentohust_modern.__main__:main"
+
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+mentohust_modern = ["assets/*.png", "assets/*.ico"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
