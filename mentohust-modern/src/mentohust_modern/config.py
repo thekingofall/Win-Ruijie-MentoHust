@@ -57,11 +57,11 @@ class MentohustConfig:
         data["dhcp_script"] = ""
         return cls(**data)
 
-    def save_json(self, path: str | Path, *, export: bool = False) -> None:
+    def save_json(self, path: str | Path, *, export: bool = False, machine: bool = False) -> None:
         data = self.to_dict()
         data.pop("password", None)
         data.pop("dhcp_script", None)
-        data["password_dpapi"] = protect(self.password) if self.remember_password and not export else ""
+        data["password_dpapi"] = protect(self.password, machine=machine) if self.remember_password and not export else ""
         if export:
             data["username"] = ""
             data["remember_password"] = False

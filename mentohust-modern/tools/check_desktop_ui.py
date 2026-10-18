@@ -28,6 +28,8 @@ app.update()
 checks["settings_separate_window"] = app.settings_window is not None and app.settings_window != app
 checks["adapter_in_settings"] = contained(app.settings_adapter,app.settings_window) and app.settings_adapter.winfo_viewable()
 checks["startup_option_visible"] = contained(app.startup_check,app.settings_window) and app.startup_check.winfo_viewable()
+checks["boot_switch_visible"] = contained(app.boot_check,app.settings_window) and app.boot_check.winfo_viewable()
+checks["preview_cannot_change_boot"] = app.boot_check.instate(["disabled"])
 checks["preview_cannot_change_startup"] = app.startup_check.instate(["disabled"])
 app.settings_window.destroy()
 app.form["username"].set("test-private-user")

@@ -17,6 +17,7 @@ from .logging_utils import get_logger
 from .runtime_checks import validation_errors
 from .tray import TrayController
 from .startup import startup_status, set_startup
+from .boot import boot_status, set_boot_enabled, read_status
 from .windows import SessionEndNotifier, configure_compact_window, minimize_window, begin_window_drag
 
 BG, INK, MUTED, BLUE, GREEN = "#F4F8F9", "#26363C", "#778593", "#4C91CC", "#38C779"
@@ -91,6 +92,11 @@ class MentohustApp(tk.Tk):
         self._icon = tk.PhotoImage(file=str(asset_path("app-icon.png")))
         self.iconphoto(True, self._icon)
         self.client = None
+        self._boot = {"ready": smoke_test, "enabled": False, "legacy_enabled": False}
+        self._boot_busy = False
+        self._boot_query_serial = 0
+        self._boot_message = "界面预览中的开机联网设置已停用。" if smoke_test else "正在读取开机联网设置…"
+        self._next_boot_status = 0.0
         self.interfaces = []
         self.events = queue.Queue()
         self.exiting = False
@@ -113,6 +119,7 @@ class MentohustApp(tk.Tk):
         self.bind("<Map>", lambda e: self.after(30, lambda: configure_compact_window(self.winfo_id(),self.m(290),self.m(467))) if e.widget == self else None)
         self.bind("<Alt-F4>", self._hide_to_tray)
         if not smoke_test:
+            self._query_boot()
             ensure_app_dirs()
             try:
                 if self.profile_path.exists():
@@ -233,10 +240,11 @@ class MentohustApp(tk.Tk):
         return win
 
     def _open_settings(self):
+        if not self.smoke_test and not self._boot_busy: self._query_boot()
         if self.settings_window and self.settings_window.winfo_exists():
             self.settings_window.lift()
             return
-        win=self._tool_window("网络设置 · 新锐捷",500,500)
+        win=self._tool_window("网络设置 · 新锐捷",500,570)
         self.settings_window=win
         draft={k:tk.StringVar(win,v.get()) for k,v in self.form.items()}
         adapter_row=ttk.Frame(win,padding=(self.p(14),self.p(14),self.p(14),0))
@@ -260,12 +268,22 @@ class MentohustApp(tk.Tk):
         for panel,title in ((general,"常规"),(network,"网络"),(auth,"认证"),(device,"网卡信息")):
             tabs.add(panel,text=title)
             panel.columnconfigure(1,weight=1)
+        self.boot_var=tk.BooleanVar(win,self._boot["enabled"])
+        self.boot_info=tk.StringVar(win,self._boot_message)
+        self.boot_check=ttk.Checkbutton(general,text="开机自动联网（无需登录 Windows）",
+            variable=self.boot_var,command=self._toggle_boot,
+            state="disabled" if self.smoke_test or not self._boot["ready"] or self._boot_busy else "normal")
+        self.boot_check.grid(row=0,column=0,columnspan=2,sticky="w",pady=(0,self.p(8)))
+        ttk.Label(general,text="开机后在后台认证，掉线后自动重试。\n退出窗口后继续联网；关闭此开关结束后台连接。",
+            wraplength=self.p(400),foreground=MUTED).grid(row=1,column=0,columnspan=2,sticky="w")
+        ttk.Label(general,textvariable=self.boot_info,wraplength=self.p(400)).grid(row=2,column=0,columnspan=2,sticky="w",pady=self.p(12))
+        ttk.Separator(general).grid(row=3,column=0,columnspan=2,sticky="ew",pady=self.p(8))
         startup_var=tk.BooleanVar(win,False)
         startup_info=tk.StringVar(win,"正在读取 Windows 启动设置…")
-        startup_check=ttk.Checkbutton(general,text="开机自启动（登录 Windows 后）",variable=startup_var,state="disabled")
-        startup_check.grid(row=0,column=0,columnspan=2,sticky="w",pady=(self.p(8),self.p(12)))
-        ttk.Label(general,text="登录 Windows 后自动打开新锐捷。\n勾选主窗口的“自动连接”后，连接成功会收起到托盘。\n右键托盘图标可显示窗口或退出。",wraplength=self.p(400),foreground=MUTED).grid(row=1,column=0,columnspan=2,sticky="w")
-        ttk.Label(general,textvariable=startup_info,wraplength=self.p(400)).grid(row=2,column=0,columnspan=2,sticky="w",pady=self.p(16))
+        startup_check=ttk.Checkbutton(general,text="登录后显示新锐捷",variable=startup_var,state="disabled")
+        startup_check.grid(row=4,column=0,columnspan=2,sticky="w",pady=(self.p(8),self.p(12)))
+        ttk.Label(general,text="登录 Windows 后自动打开新锐捷。\n勾选主窗口的“自动连接”后，连接成功会收起到托盘。\n右键托盘图标可显示窗口或退出。",wraplength=self.p(400),foreground=MUTED).grid(row=5,column=0,columnspan=2,sticky="w")
+        ttk.Label(general,textvariable=startup_info,wraplength=self.p(400)).grid(row=6,column=0,columnspan=2,sticky="w",pady=self.p(16))
         startup_events=queue.Queue()
         startup_state={"ready":False,"busy":False,"enabled":False}
         def startup_worker(operation):
@@ -279,7 +297,7 @@ class MentohustApp(tk.Tk):
             startup_info.set("正在保存 Windows 启动设置…")
             threading.Thread(target=startup_worker,args=(startup_var.get(),),daemon=True).start()
         startup_apply=ttk.Button(general,text="应用启动设置",command=apply_startup,state="disabled")
-        startup_apply.grid(row=3,column=0,columnspan=2,sticky="w")
+        startup_apply.grid(row=7,column=0,columnspan=2,sticky="w")
         self.startup_check=startup_check
         def poll_startup():
             if not win.winfo_exists(): return
@@ -335,7 +353,22 @@ class MentohustApp(tk.Tk):
         ttk.Label(device,text="Wi-Fi、VPN 和虚拟网卡可同时保留。",foreground=MUTED).grid(row=5,column=0,columnspan=2,sticky="w",pady=self.p(16))
         actions=ttk.Frame(win,padding=(self.p(14),0,self.p(14),self.p(14)))
         actions.pack(fill="x")
+        def settings_config():
+            data={k:v.get() for k,v in draft.items()}
+            data.update(dhcp_mode=dhcp_names.index(dhcp.get()),multicast_address=modes.index(mode.get()),
+                remember_password=self.remember.get(),auto_connect=self.auto_connect.get())
+            return MentohustConfig.from_dict(data)
+        self._settings_config=settings_config
         def accept():
+            if self._boot_busy:
+                messagebox.showinfo("正在更新设置","后台设置完成后即可保存。",parent=win)
+                return
+            if self._boot["enabled"]:
+                if settings_config().to_dict()==self._collect().to_dict():
+                    win.destroy()
+                else:
+                    messagebox.showinfo("后台连接中","修改网络参数前，请关闭开机自动联网。",parent=win)
+                return
             if self.client:
                 messagebox.showinfo("连接进行中","请断开连接后修改网络设置。",parent=win)
                 return
@@ -377,6 +410,7 @@ class MentohustApp(tk.Tk):
         return next((x for x in self.interfaces if guid in (x.guid.lower(),x.network_name.lower())),None) if guid else None
 
     def _refresh(self):
+        if not self.smoke_test and not self._boot["ready"]: self._query_boot()
         self.refresh_button.configure(state="disabled")
         def worker():
             try: self.events.put(("interfaces",[x for x in list_interfaces() if x.is_wired]))
@@ -391,7 +425,7 @@ class MentohustApp(tk.Tk):
         self._adapter_status()
 
     def _adapter_status(self):
-        if self.client: return
+        if self.client or self._boot["enabled"] or self._boot["legacy_enabled"]: return
         selected=self._selected_interface()
         self.status_dot.configure(fg="#98A6B2")
         self.status.set("等待连接")
@@ -424,8 +458,67 @@ class MentohustApp(tk.Tk):
             try: self._collect().save_json(path,export=True)
             except Exception: messagebox.showerror("导出未完成","请检查保存位置的访问权限。",parent=self)
 
+    def _query_boot(self):
+        self._boot_query_serial += 1
+        serial = self._boot_query_serial
+        def worker():
+            try: self.events.put(("boot_query",(serial,boot_status())))
+            except Exception as exc: self.events.put(("boot_query_error",(serial,str(exc))))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _maybe_auto_connect(self):
+        current=self._selected_interface()
+        if (self._boot["ready"] and not self._boot["enabled"] and not self._boot["legacy_enabled"]
+            and not self._boot_busy and self.auto_connect.get() and self.remember.get()
+            and current and current.status=="Up" and not getattr(self,"_auto_attempted",False)):
+            self._auto_attempted=True
+            self.after(200,lambda: self._connect(automatic=True))
+
+    def _update_boot_controls(self):
+        if self.settings_window and self.settings_window.winfo_exists() and hasattr(self,"boot_check"):
+            if not self._boot_busy: self.boot_var.set(self._boot["enabled"])
+            self.boot_info.set(self._boot_message)
+            self.boot_check.configure(state="disabled" if self.smoke_test or self._boot_busy or not self._boot["ready"] else "normal")
+        self.connect_button.configure(state="disabled" if self._boot_busy else "normal")
+
+    def _toggle_boot(self):
+        if self.smoke_test or self._boot_busy or not self._boot["ready"]: return
+        enabled=self.boot_var.get()
+        config=self._collect()
+        if enabled:
+            try:
+                if hasattr(self,"_settings_config"):
+                    config=self._settings_config()
+                errors=validation_errors(config)
+                if errors: raise ValueError(errors[0])
+                config.save_json(self.profile_path)
+                self._apply(config)
+            except Exception as exc:
+                self.boot_var.set(self._boot["enabled"])
+                self.boot_info.set(str(exc))
+                return
+        self._boot_query_serial += 1
+        self._boot_busy=True
+        self._auto_attempted=True
+        self._boot_message="正在验证并启用后台连接…" if enabled else "正在关闭后台连接…"
+        self._update_boot_controls()
+        current_client=self.client
+        def worker():
+            try:
+                if current_client: current_client.stop()
+                result=set_boot_enabled(enabled,config)
+                self.events.put(("boot",result))
+            except Exception as exc:
+                try: self.events.put(("boot",boot_status()))
+                except Exception: pass
+                self.events.put(("boot_error",str(exc)))
+        threading.Thread(target=worker,daemon=True).start()
+
     def _primary_action(self):
         if self.smoke_test: return
+        if self._boot["enabled"] or self._boot["legacy_enabled"]:
+            self._open_settings()
+            return
         self._disconnect() if self.client else self._connect()
 
     def _set_busy(self,busy):
@@ -435,7 +528,10 @@ class MentohustApp(tk.Tk):
         self.password_entry.configure(state="disabled" if busy else "normal")
 
     def _connect(self, *, automatic=False):
-        if self.exiting or self.client is not None: return
+        if self.exiting or self.client is not None or self._boot_busy: return
+        if not self._boot["ready"] or self._boot["enabled"] or self._boot["legacy_enabled"]:
+            self._boot_message = "请在网络设置中管理后台连接。"
+            return
         self._hide_after_connect = automatic
         try:
             config=self._collect()
@@ -501,6 +597,11 @@ class MentohustApp(tk.Tk):
     def _drain(self):
         while not self.events.empty():
             kind,payload=self.events.get_nowait()
+            if kind in ("boot_query", "boot_query_error"):
+                serial,payload=payload
+                if serial != self._boot_query_serial or self._boot_busy:
+                    continue
+                kind="boot" if kind=="boot_query" else "boot_error"
             if kind=="interfaces":
                 self.interfaces=payload
                 self.refresh_button.configure(state="normal")
@@ -512,9 +613,22 @@ class MentohustApp(tk.Tk):
                 if not current and not self.client: self.form["interface_id"].set("")
                 self._adapter_status()
                 self._log(f"发现 {len(payload)} 个物理以太网接口。")
-                if self.auto_connect.get() and self.remember.get() and current and current.status=="Up" and not getattr(self,"_auto_attempted",False):
-                    self._auto_attempted=True
-                    self.after(200,lambda: self._connect(automatic=True))
+                self._maybe_auto_connect()
+            elif kind=="boot":
+                self._boot.update(payload,ready=True)
+                if payload["enabled"] or payload["legacy_enabled"]: self._auto_attempted=True
+                self._boot_busy=False
+                self._boot_message=("已开启：后台持续联网。" if payload["enabled"] else
+                    "检测到旧版后台连接，开启此项可迁移。" if payload["legacy_enabled"] else "已关闭开机自动联网。")
+                self._update_boot_controls()
+                if not payload["enabled"] and not payload["legacy_enabled"] and not self.client:
+                    self._set_busy(False)
+                    self._adapter_status()
+                self._maybe_auto_connect()
+            elif kind=="boot_error":
+                self._boot_busy=False
+                self._boot_message=payload
+                self._update_boot_controls()
             elif kind=="refresh_error":
                 self.refresh_button.configure(state="normal")
                 self._log(payload)
@@ -524,6 +638,19 @@ class MentohustApp(tk.Tk):
             elif kind=="show":
                 self._show_window()
             elif kind=="exit": self._close()
+        if self._boot["enabled"] and time.monotonic() >= self._next_boot_status:
+            self._next_boot_status=time.monotonic()+2
+            background=read_status()
+            fresh=background.get("fresh",False)
+            self.status.set("后台 · "+background.get("state","等待连接") if fresh else "后台等待恢复")
+            self.status_detail.set("开机自动联网已开启")
+            self.status_dot.configure(fg=GREEN if fresh and background.get("authenticated") else BLUE)
+            self.connect_button.configure(text="后台设置",state="normal")
+            self.online_since=None
+        elif self._boot["legacy_enabled"]:
+            self.status.set("旧版后台连接")
+            self.status_detail.set("可在网络设置中迁移")
+            self.connect_button.configure(text="后台设置",state="normal")
         if self.online_since is not None:
             seconds=int(time.monotonic()-self.online_since)
             self.status_detail.set(f"已连接  {seconds//3600:02d}:{seconds//60%60:02d}:{seconds%60:02d}")
@@ -562,6 +689,9 @@ class MentohustApp(tk.Tk):
 
     def _close(self):
         """Explicit tray Exit: stop authentication before removing the icon."""
+        if self._boot_busy:
+            messagebox.showinfo("正在更新设置","后台设置完成后即可退出。",parent=self)
+            return
         if not self.exiting:
             self._save()
             self.exiting=True

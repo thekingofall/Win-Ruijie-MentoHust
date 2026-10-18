@@ -110,6 +110,7 @@ class ProtocolTests(unittest.TestCase):
         c.stop(wait=False)
         c._handle_packet(frame(1,body=b"\x01"))
         self.assertEqual(c.state,START)
+    @patch("mentohust_modern.process_lock.exclusive", lambda name: __import__("contextlib").nullcontext())
     def test_stop_wakes_worker_and_reconnects_without_old_packets(self):
         c=MentohustClient(MentohustConfig())
         c._initialize=Mock()

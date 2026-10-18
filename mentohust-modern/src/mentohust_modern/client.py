@@ -122,6 +122,16 @@ class MentohustClient:
         self.state_callback(state)
 
     def _run(self) -> None:
+        from .process_lock import exclusive
+        try:
+            with exclusive("Global\\XinRuijieAuthenticationSessionV1"):
+                self._run_owned()
+        except RuntimeError as exc:
+            self.terminal_error = True
+            self._log(f"[错误] {exc}")
+            self._set_state("错误")
+
+    def _run_owned(self) -> None:
         try:
             self._initialize()
             if self.stop_event.is_set():

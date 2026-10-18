@@ -1,6 +1,6 @@
-﻿param(
+param(
     [string]$WorkRoot = (Join-Path ([IO.Path]::GetTempPath()) "XinRuijie-build"),
-    [string]$ExecutableName = "新锐捷-0.5.1"
+    [string]$ExecutableName = "新锐捷-0.6.0"
 )
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)

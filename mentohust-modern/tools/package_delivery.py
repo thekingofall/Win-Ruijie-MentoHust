@@ -40,13 +40,13 @@ for item in (Path(sys.base_prefix) / "tcl").glob("*/license.terms"):
 lock = sorted(f"{d.metadata['Name']}=={d.version}" for d in metadata.distributions() if d.metadata.get("Name") != "mentohust-win-modern")
 (root / "mentohust-modern" / "requirements-build.lock.txt").write_text("# Windows Python 3.12 build environment\n"+"\n".join(lock)+"\n", encoding="utf-8")
 from mentohust_modern import APP_VERSION
-source_zip = dist / f"新锐捷-{APP_VERSION}-source.zip"
+source_zip = dist / f"XinRuijie-{APP_VERSION}-source.zip"
 with zipfile.ZipFile(source_zip, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
     for relative in ("LICENSE", "NOTICE.md", "README.md"):
         bundle.write(root / relative, relative)
     for folder in ("mentohust-modern/src", "mentohust-modern/tests", "mentohust-modern/tools"):
         for item in (root / folder).rglob("*"):
-            if item.is_file() and "__pycache__" not in item.parts and item.suffix != ".pyc":
+            if item.is_file() and "__pycache__" not in item.parts and not any(part.endswith(".egg-info") for part in item.parts) and item.suffix != ".pyc":
                 bundle.write(item, item.relative_to(root))
     for relative in ("mentohust-modern/README.md", "mentohust-modern/pyproject.toml", "mentohust-modern/launcher.py", "mentohust-modern/requirements-build.lock.txt", "reports/gui-preview.png", "reports/release-validation.md"):
         bundle.write(root / relative, relative)

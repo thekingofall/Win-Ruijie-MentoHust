@@ -9,6 +9,8 @@ class CoexistenceTests(unittest.TestCase):
         app = Mock()
         app.client = None
         app.exiting = False
+        app._boot_busy = False
+        app._boot = {"ready":True,"enabled":False,"legacy_enabled":False}
         config = Mock(spec=MentohustConfig)
         app._collect.return_value = config
         with patch("mentohust_modern.gui.validation_errors", return_value=[]), patch("mentohust_modern.gui.MentohustClient") as client:
